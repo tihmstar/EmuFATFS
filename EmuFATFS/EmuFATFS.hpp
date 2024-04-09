@@ -54,6 +54,9 @@ public:
     int32_t hostRead(uint32_t offset, void *buf, uint32_t size);
     int32_t hostWrite(uint32_t offset, const void *buf, uint32_t size);
     
+    uint32_t diskBlockNum();
+    uint32_t diskBlockSize();
+
 #pragma mark emu providers
     void resetFiles();
     int addFile(const char *filename, const char *filenameSuffix, uint32_t fileSize, cb_read f_read, cb_write f_write = NULL);

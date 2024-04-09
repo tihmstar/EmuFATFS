@@ -37,6 +37,8 @@ using namespace tihmstar;
 #define BYTES_PER_CLUSTER (BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
 #define FIRST_DATA_CLUSTER      2
 
+#define TOTAL_SECTORS (FAT16_THRESHOLD+(4/*boot sector + 2x fat table + directory entry*/))*SECTORS_PER_CLUSTER
+
 #pragma mark helpers
 static uint8_t lfn_checksum(const char *filename){
   uint8_t ret = filename[0];
@@ -163,7 +165,7 @@ int32_t EmuFATFSBase::readBootsector(uint32_t offset, void *buf, uint32_t size){
             .physSectorsPerTrack = 1,
             .numberOfHeads = 1,
             .hiddenSectors = 0,
-            .largeTotalSectors = (FAT16_THRESHOLD+(4/*boot sector + 2x fat table + directory entry*/))*SECTORS_PER_CLUSTER,
+            .largeTotalSectors = TOTAL_SECTORS,
         },
         .physDriveNumber = 0,
         .flags = 0,
@@ -217,14 +219,13 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
         MOVEOFFSET;
     }
     
-    for (int i=0; i<_usedFiles; i++,processedEntries++) {
+    for (int i=0; i<_usedFiles; i++) {
         const FileEntry *cfe = &_fileStorage[i];
         uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
         for (int j=0; j<3; j++) {
             if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
             neededExtraEntries++;
         }
-        neededExtraEntries++; //null terminator
         if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
         neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
         
@@ -260,7 +261,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
         
 
         if (DTINDEX == processedEntries++){
-            //first entry maring end of name
+            //first entry marking end of name
             FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
             if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
             
@@ -272,8 +273,14 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
             lfn->zero = 0;
             
             const char *fnameend = cfe->filename + (neededExtraEntries-1)*LFN_ENTRY_MAX_NAME_LEN;
-            size_t fnameendLen = strlen(fnameend);
-  
+            size_t fnameendLen = 0;
+            if (fnameend - cfe->filename > cfe->filenameLenNoSuffix) {
+                fnameend = NULL;
+                fnameendLen = -3;
+            }else{
+                fnameendLen = strlen(fnameend);
+            }
+
             for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+4; j++) {
                 char c = '\0';
                 if (fnameend) {
@@ -431,6 +438,15 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
 
     return size;
 }
+
+uint32_t EmuFATFSBase::diskBlockNum(){
+    return TOTAL_SECTORS;
+}
+
+uint32_t EmuFATFSBase::diskBlockSize(){
+    return BYTES_PER_SECTOR;
+}
+
 
 #pragma mark emu providers
 void EmuFATFSBase::resetFiles(){
