@@ -16,8 +16,8 @@ namespace tihmstar {
 
 class EmuFATFSBase {
 public:
-    typedef int32_t (*cb_read)(uint32_t offset, void *buf, uint32_t size);
-    typedef int32_t (*cb_write)(uint32_t offset, const void *buf, uint32_t size);
+    typedef int32_t (*cb_read)(uint32_t offset, void *buf, uint32_t size, const char *filename);
+    typedef int32_t (*cb_write)(uint32_t offset, const void *buf, uint32_t size, const char *filename);
     
     struct FileEntry{
         cb_read f_read;

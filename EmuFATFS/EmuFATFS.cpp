@@ -273,15 +273,15 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
             lfn->zero = 0;
             
             const char *fnameend = cfe->filename + (neededExtraEntries-1)*LFN_ENTRY_MAX_NAME_LEN;
-            size_t fnameendLen = 0;
+            ssize_t fnameendLen = 0;
             if (fnameend - cfe->filename > cfe->filenameLenNoSuffix) {
+                fnameendLen = (ssize_t)cfe->filenameLenNoSuffix - (fnameend - cfe->filename);
                 fnameend = NULL;
-                fnameendLen = -3;
             }else{
                 fnameendLen = strlen(fnameend);
             }
 
-            for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+4; j++) {
+            for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+3; j++) {
                 char c = '\0';
                 if (fnameend) {
                     c = *fnameend++;
@@ -323,6 +323,10 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
                 
                 for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN; j++) {
                     char c = cfe->filename[j+z*LFN_ENTRY_MAX_NAME_LEN];
+                    
+                    if (j+z*LFN_ENTRY_MAX_NAME_LEN == cfe->filenameLenNoSuffix){
+                        c = '.';
+                    }
                     
                     if (j < 5) {
                         lfn->name1[j] = c;
@@ -395,7 +399,7 @@ int32_t EmuFATFSBase::hostRead(uint32_t offset, void *buf, uint32_t size){
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
                 uint32_t fileOffset = sectionOffset - cluster * BYTES_PER_CLUSTER;
-                didRead = cfe->f_read(fileOffset, buf, size);
+                didRead = cfe->f_read(fileOffset, buf, size, cfe->filename);
                 break;
             }
         }
@@ -430,7 +434,7 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
                 uint32_t fileOffset = sectionOffset - cluster * BYTES_PER_CLUSTER;
-                didWrite = cfe->f_write(fileOffset, buf, size);
+                didWrite = cfe->f_write(fileOffset, buf, size, cfe->filename);
                 break;
             }
         }
