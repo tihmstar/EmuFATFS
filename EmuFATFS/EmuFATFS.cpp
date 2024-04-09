@@ -309,7 +309,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
             MOVEOFFSET;
         }
         
-        for (int z=0; z<neededExtraEntries-1; z++) {
+        for (int z=neededExtraEntries-2; z>=0; z--) {
             if (DTINDEX == processedEntries++){
                 FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
                 if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
