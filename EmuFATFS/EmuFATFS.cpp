@@ -400,7 +400,7 @@ int32_t EmuFATFSBase::hostRead(uint32_t offset, void *buf, uint32_t size){
             uint32_t fileClusterCnt = cfe->fileSize / BYTES_PER_CLUSTER;
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
-                uint32_t fileOffset = sectionOffset - cluster * BYTES_PER_CLUSTER;
+                uint32_t fileOffset = sectionOffset - fileStartCluster * BYTES_PER_CLUSTER;
                 didRead = cfe->f_read(fileOffset, buf, size, cfe->filename);
                 break;
             }
