@@ -12,7 +12,7 @@
 #include <stdio.h>
 
 
-int32_t info_read_cb(uint32_t foffset, void *buf, uint32_t bufSize){
+int32_t info_read_cb(uint32_t foffset, void *buf, uint32_t bufSize, const char *filaneme){
     char content[] = "Hello world file!!";
     if (bufSize > sizeof(content)) bufSize = sizeof(content);
     
@@ -26,7 +26,7 @@ int main(int argc, const char * argv[]) {
     
     tihmstar::EmuFATFS fs;
     
-    fs.addFile("info_file", "txt", 0x100, info_read_cb);
+    fs.addFile("info_file", "txt", 0x1000000, info_read_cb);
     
     
     
@@ -34,7 +34,7 @@ int main(int argc, const char * argv[]) {
     uint64_t totalRead = 0;
     uint64_t maxReadSize = 0x600000;
     while (totalRead < maxReadSize) {
-        uint8_t buf[0x010000];
+        uint8_t buf[0x200];
         int32_t didread = 0;
         uint32_t needsRead = sizeof(buf);
         if (needsRead > maxReadSize - totalRead) needsRead = (uint32_t)(maxReadSize - totalRead);
