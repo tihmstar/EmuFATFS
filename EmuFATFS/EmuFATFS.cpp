@@ -201,165 +201,229 @@ error:
 }
 
 int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t size){
-    int err = 0;
-    int32_t didRead = 0;
-    uint8_t *ptr = (uint8_t*)buf;
-    FAT_DirectoryTableFileEntry_t dfe = {};
-    
-    uint32_t processedEntries = 1;
-    
+  int err = 0;
+  int32_t didRead = 0;
+  uint8_t *ptr = (uint8_t*)buf;
+  FAT_DirectoryTableFileEntry_t dfe = {};
+  
+  uint32_t processedEntries = 1;
+  
 #define DTINDEX (offset / sizeof(dfe))
 #define MOVEOFFSET do {ptr += sizeof(FAT_DirectoryTableFileEntry_t); size -= sizeof(FAT_DirectoryTableFileEntry_t); didRead+=sizeof(FAT_DirectoryTableFileEntry_t); offset +=sizeof(FAT_DirectoryTableFileEntry_t);} while(0)
-    
-    cretassure((offset % sizeof(dfe)) == 0, "Partial entry reads are not handled");
-    
-    if (DTINDEX == 0) {
-        if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-        FAT_DirectoryTableLFNEntry_t *vle = (FAT_DirectoryTableLFNEntry_t *)ptr;
-        snprintf((char*)vle, 13, "%s             ",_volumeLabel);
-        vle->attributes = FILEENTRY_ATTR_VOLUME_LABEL;
-        MOVEOFFSET;
-    }
-    
-    for (int i=0; i<_usedFiles; i++) {
-        const FileEntry *cfe = &_fileStorage[i];
-        uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
-        for (int j=0; j<3; j++) {
-            if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
-            neededExtraEntries++;
-        }
-        if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
-        neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
-        
-        //first construct main entry
-        dfe = {
-            /*
-                The following 3 members are not filled here, but in the code down below
-             */
-            .shortFilename = {},
-            .filenameExt = {},
-            .fileAttributes = {},
-            /*
-                Actual data
-             */
-            .reserved = 0,
-            .createTime_ms = 0,
-            .createTime = 0,
-            .createDate = 0,
-            .accessedDate = 0,
-            .clusterNumber_High = static_cast<uint16_t>(cfe->startCluster>>16),
-            .modifiedTime = 0,
-            .modifiedDate = 0,
-            .clusterLocation = static_cast<uint16_t>(cfe->startCluster),
-            .fileSize = cfe->fileSize,
-        };
-        snprintf(dfe.shortFilename, 9, "%s        ",cfe->filename);
-        if (cfe->filenameLenNoSuffix > 8) {
-            snprintf(&dfe.shortFilename[5], 4, "\x7e%02d",i+1);
-        }
-        memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
-        uint8_t csum = lfn_checksum(dfe.shortFilename);
-        dfe.fileAttributes = FILEENTRY_ATTR_SYSTEM | (cfe->f_write == NULL ? FILEENTRY_ATTR_READONLY : 0);
-        
+  
+  cretassure((offset % sizeof(dfe)) == 0, "Partial entry reads are not handled");
+  
+  if (DTINDEX == 0) {
+      if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+      FAT_DirectoryTableLFNEntry_t *vle = (FAT_DirectoryTableLFNEntry_t *)ptr;
+      snprintf((char*)vle, 13, "%s             ",_volumeLabel);
+      vle->attributes = FILEENTRY_ATTR_VOLUME_LABEL;
+      MOVEOFFSET;
+  }
+  
+  for (int i=0; i<_usedFiles; i++) {
+      const FileEntry *cfe = &_fileStorage[i];
+      uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
+      for (int j=0; j<3; j++) {
+          if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
+          neededExtraEntries++;
+      }
+      if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
+      neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
+      
+      //first construct main entry
+      dfe = {
+          /*
+              The following 3 members are not filled here, but in the code down below
+            */
+          .shortFilename = {},
+          .filenameExt = {},
+          .fileAttributes = {},
+          /*
+              Actual data
+            */
+          .reserved = 0,
+          .createTime_ms = 0,
+          .createTime = 0,
+          .createDate = 0,
+          .accessedDate = 0,
+          .clusterNumber_High = static_cast<uint16_t>(cfe->startCluster>>16),
+          .modifiedTime = 0,
+          .modifiedDate = 0,
+          .clusterLocation = static_cast<uint16_t>(cfe->startCluster),
+          .fileSize = cfe->fileSize,
+      };
+      snprintf(dfe.shortFilename, 9, "%s        ",cfe->filename);
+      if (cfe->filenameLenNoSuffix > 8) {
+          snprintf(&dfe.shortFilename[5], 4, "\x7e%02d",i+1);
+      }
+      memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
+      uint8_t csum = lfn_checksum(dfe.shortFilename);
+      dfe.fileAttributes = FILEENTRY_ATTR_SYSTEM | (cfe->f_write == NULL ? FILEENTRY_ATTR_READONLY : 0);
+      
 
-        if (DTINDEX == processedEntries++){
-            //first entry marking end of name
-            FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
-            if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-            
-            memset(lfn, 0xFF, sizeof(*lfn));
-            lfn->sequenceNumber = neededExtraEntries | LFN_ENTRY_LAST;
-            lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
-            lfn->type = 0;
-            lfn->checksum = csum;
-            lfn->zero = 0;
-            
-            const char *fnameend = cfe->filename + (neededExtraEntries-1)*LFN_ENTRY_MAX_NAME_LEN;
-            ssize_t fnameendLen = 0;
-            if (fnameend - cfe->filename > cfe->filenameLenNoSuffix) {
-                fnameendLen = (ssize_t)cfe->filenameLenNoSuffix - (fnameend - cfe->filename);
-                fnameend = NULL;
-            }else{
-                fnameendLen = strlen(fnameend);
-            }
+      if (DTINDEX == processedEntries++){
+          //first entry marking end of name
+          FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
+          if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+          
+          memset(lfn, 0xFF, sizeof(*lfn));
+          lfn->sequenceNumber = neededExtraEntries | LFN_ENTRY_LAST;
+          lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
+          lfn->type = 0;
+          lfn->checksum = csum;
+          lfn->zero = 0;
+          
+          const char *fnameend = cfe->filename + (neededExtraEntries-1)*LFN_ENTRY_MAX_NAME_LEN;
+          ssize_t fnameendLen = 0;
+          if (fnameend - cfe->filename > cfe->filenameLenNoSuffix) {
+              fnameendLen = (ssize_t)cfe->filenameLenNoSuffix - (fnameend - cfe->filename);
+              fnameend = NULL;
+          }else{
+              fnameendLen = strlen(fnameend);
+          }
 
-            for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+3; j++) {
-                char c = '\0';
-                if (fnameend) {
-                    c = *fnameend++;
-                    if (!c){
-                        c = '.';
-                        fnameend = NULL;
-                    }
-                }else{
-                    int suffixIdx = j - (int)(fnameendLen+1);
-                    if (suffixIdx < 3) {
-                        c = cfe->filename[cfe->filenameLenNoSuffix+1 + suffixIdx];
-                    }
-                    if (c == ' ') c = '\0';
-                }
-                
-                if (j < 5) {
-                    lfn->name1[j] = c;
-                } else if (j < 5+6) {
-                    lfn->name2[j-5] = c;
-                } else {
-                    lfn->name3[j-(5+6)] = c;
-                }
-                if (c == '\0') break;
-            }
-            MOVEOFFSET;
-        }
-        
-        for (int z=neededExtraEntries-2; z>=0; z--) {
-            if (DTINDEX == processedEntries++){
-                FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
-                if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-                
-                memset(lfn, 0xFF, sizeof(*lfn));
-                lfn->sequenceNumber = z+1;
-                lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
-                lfn->type = 0;
-                lfn->checksum = csum;
-                lfn->zero = 0;
-                
-                for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN; j++) {
-                    char c = cfe->filename[j+z*LFN_ENTRY_MAX_NAME_LEN];
-                    
-                    if (j+z*LFN_ENTRY_MAX_NAME_LEN == cfe->filenameLenNoSuffix){
-                        c = '.';
-                    }
-                    
-                    if (j < 5) {
-                        lfn->name1[j] = c;
-                    } else if (j < 5+6) {
-                        lfn->name2[j-5] = c;
-                    } else {
-                        lfn->name3[j-(5+6)] = c;
-                    }
-                }
-                MOVEOFFSET;
-            }
-        }
+          for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+3; j++) {
+              char c = '\0';
+              if (fnameend) {
+                  c = *fnameend++;
+                  if (!c){
+                      c = '.';
+                      fnameend = NULL;
+                  }
+              }else{
+                  int suffixIdx = j - (int)(fnameendLen+1);
+                  if (suffixIdx < 3) {
+                      c = cfe->filename[cfe->filenameLenNoSuffix+1 + suffixIdx];
+                  }
+                  if (c == ' ') c = '\0';
+              }
+              
+              if (j < 5) {
+                  lfn->name1[j] = c;
+              } else if (j < 5+6) {
+                  lfn->name2[j-5] = c;
+              } else {
+                  lfn->name3[j-(5+6)] = c;
+              }
+              if (c == '\0') break;
+          }
+          MOVEOFFSET;
+      }
+      
+      for (int z=neededExtraEntries-2; z>=0; z--) {
+          if (DTINDEX == processedEntries++){
+              FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
+              if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+              
+              memset(lfn, 0xFF, sizeof(*lfn));
+              lfn->sequenceNumber = z+1;
+              lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
+              lfn->type = 0;
+              lfn->checksum = csum;
+              lfn->zero = 0;
+              
+              for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN; j++) {
+                  char c = cfe->filename[j+z*LFN_ENTRY_MAX_NAME_LEN];
+                  
+                  if (j+z*LFN_ENTRY_MAX_NAME_LEN == cfe->filenameLenNoSuffix){
+                      c = '.';
+                  }
+                  
+                  if (j < 5) {
+                      lfn->name1[j] = c;
+                  } else if (j < 5+6) {
+                      lfn->name2[j-5] = c;
+                  } else {
+                      lfn->name3[j-(5+6)] = c;
+                  }
+              }
+              MOVEOFFSET;
+          }
+      }
 
-        if (DTINDEX == processedEntries++){
-            if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-            memcpy(ptr, &dfe, sizeof(dfe));
-            MOVEOFFSET;
-        }
-    }
+      if (DTINDEX == processedEntries++){
+          if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+          memcpy(ptr, &dfe, sizeof(dfe));
+          MOVEOFFSET;
+      }
+  }
 
-    if (offset + size > SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR) size = SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR - didRead - offset;
-    memset(ptr, 0, size); didRead += size;
-    
+  if (offset + size > SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR) size = SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR - didRead - offset;
+  memset(ptr, 0, size); didRead += size;
+  
 error:
-    if (err) {
-        return -err;
-    }
-    return didRead;
+  if (err) {
+      return -err;
+  }
+  return didRead;
+#undef MOVEOFFSET
 #undef DTINDEX
 }
 
+// int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size){
+//     int err = 0;
+//     int32_t didWrite = 0;
+//     const uint8_t *ptr = (const uint8_t*)buf;
+//     FAT_DirectoryTableFileEntry_t dfe = {};    
+//     uint32_t processedEntries = 1;
+    
+// #define DTINDEX (offset / sizeof(dfe))
+// #define MOVEOFFSET do {ptr += sizeof(FAT_DirectoryTableFileEntry_t); size -= sizeof(FAT_DirectoryTableFileEntry_t); didWrite+=sizeof(FAT_DirectoryTableFileEntry_t); offset +=sizeof(FAT_DirectoryTableFileEntry_t);} while(0)
+    
+//     cretassure((offset % sizeof(dfe)) == 0, "Partial entry reads are not handled");
+    
+//     if (DTINDEX == 0) {
+//         if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+//         MOVEOFFSET;
+//     }
+    
+//     for (int i=0; i<_usedFiles; i++) {
+//         const FileEntry *cfe = &_fileStorage[i];
+//         uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
+//         for (int j=0; j<3; j++) {
+//             if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
+//             neededExtraEntries++;
+//         }
+//         if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
+//         neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
+        
+//         if (DTINDEX == processedEntries++){
+//             MOVEOFFSET;
+//         }
+        
+//         for (int z=neededExtraEntries-2; z>=0; z--) {
+//             if (DTINDEX == processedEntries++){
+//                 MOVEOFFSET;
+//             }
+//         }
+
+//         if (DTINDEX == processedEntries++){
+//             if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+//             const FAT_DirectoryTableFileEntry_t *dfe = (const FAT_DirectoryTableFileEntry_t*)ptr;
+//             char shortFilename[12] = {};
+//             snprintf(shortFilename, 9, "%s        ",cfe->filename);
+//             if (cfe->filenameLenNoSuffix > 8) {
+//                 snprintf(&shortFilename[5], 4, "\x7e%02d",i+1);
+//             }
+//             if (memcmp(shortFilename, dfe->shortFilename, 5) != 0){
+//               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
+//             }
+//             MOVEOFFSET;
+//         }
+//     }
+
+//     if (offset + size > SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR) size = SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR - didWrite - offset;
+//     didWrite += size;
+    
+// error:
+//     if (err) {
+//         return -err;
+//     }
+//     return didWrite;
+// #undef MOVEOFFSET
+// #undef DTINDEX
+// }
 
 #pragma mark public
 #pragma mark host accessors
@@ -422,6 +486,12 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
     uint32_t sectorNum = offset / BYTES_PER_SECTOR;
     int32_t didWrite = 0;
     
+    // if (sectorNum >= SECTOR_ROOT_DIRECTORY && sectorNum < SECTOR_DATA_REGION) {
+    //   uint32_t sectionOffset = offset - SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR;
+
+    //   return catchRootDirectoryFileDeletion(sectionOffset, buf, size);
+
+    // }else 
     if (sectorNum >= SECTOR_DATA_REGION) {
         uint32_t sectionOffset = offset - SECTOR_DATA_REGION*BYTES_PER_SECTOR;
 
