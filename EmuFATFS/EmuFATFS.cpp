@@ -435,7 +435,7 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
             uint32_t fileClusterCnt = cfe->fileSize / BYTES_PER_CLUSTER;
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
-                uint32_t fileOffset = sectionOffset - cluster * BYTES_PER_CLUSTER;
+                uint32_t fileOffset = sectionOffset - fileStartCluster * BYTES_PER_CLUSTER;
                 didWrite = cfe->f_write(fileOffset, buf, size, cfe->filename);
                 break;
             }
