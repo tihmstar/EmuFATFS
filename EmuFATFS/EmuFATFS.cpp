@@ -21,7 +21,7 @@
 using namespace tihmstar;
 
 
-#define BYTES_PER_SECTOR 512
+#define BYTES_PER_SECTOR 0x1000
 #define SECTORS_PER_CLUSTER 128 //128 max allowed value
 
 #define RESERVED_SECTORS_CNT 1
@@ -37,7 +37,7 @@ using namespace tihmstar;
 #define BYTES_PER_CLUSTER (BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
 #define FIRST_DATA_CLUSTER      2
 
-#define TOTAL_SECTORS (FAT16_THRESHOLD+(4/*boot sector + 2x fat table + directory entry*/))*SECTORS_PER_CLUSTER
+#define TOTAL_SECTORS (FAT16_THRESHOLD*512/BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
 
 #pragma mark helpers
 static uint8_t lfn_checksum(const char *filename){
@@ -255,7 +255,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
       };
       snprintf(dfe.shortFilename, 9, "%s        ",cfe->filename);
       if (cfe->filenameLenNoSuffix > 8) {
-          snprintf(&dfe.shortFilename[5], 4, "\x7e%02d",i+1);
+          snprintf(&dfe.shortFilename[5], 4, "\x7e%d",i+1);
       }
       memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
       uint8_t csum = lfn_checksum(dfe.shortFilename);
@@ -361,69 +361,74 @@ error:
 #undef DTINDEX
 }
 
-// int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size){
-//     int err = 0;
-//     int32_t didWrite = 0;
-//     const uint8_t *ptr = (const uint8_t*)buf;
-//     FAT_DirectoryTableFileEntry_t dfe = {};    
-//     uint32_t processedEntries = 1;
+int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size){
+    int err = 0;
+    int32_t didWrite = 0;
+    const uint8_t *ptr = (const uint8_t*)buf;
+    FAT_DirectoryTableFileEntry_t dfe = {};    
+    uint32_t processedEntries = 1;
     
-// #define DTINDEX (offset / sizeof(dfe))
-// #define MOVEOFFSET do {ptr += sizeof(FAT_DirectoryTableFileEntry_t); size -= sizeof(FAT_DirectoryTableFileEntry_t); didWrite+=sizeof(FAT_DirectoryTableFileEntry_t); offset +=sizeof(FAT_DirectoryTableFileEntry_t);} while(0)
+#define DTINDEX (offset / sizeof(dfe))
+#define MOVEOFFSET do {ptr += sizeof(FAT_DirectoryTableFileEntry_t); size -= sizeof(FAT_DirectoryTableFileEntry_t); didWrite+=sizeof(FAT_DirectoryTableFileEntry_t); offset +=sizeof(FAT_DirectoryTableFileEntry_t);} while(0)
     
-//     cretassure((offset % sizeof(dfe)) == 0, "Partial entry reads are not handled");
+    cretassure((offset % sizeof(dfe)) == 0, "Partial entry reads are not handled");
     
-//     if (DTINDEX == 0) {
-//         if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-//         MOVEOFFSET;
-//     }
+    if (DTINDEX == 0) {
+        if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+        MOVEOFFSET;
+    }
     
-//     for (int i=0; i<_usedFiles; i++) {
-//         const FileEntry *cfe = &_fileStorage[i];
-//         uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
-//         for (int j=0; j<3; j++) {
-//             if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
-//             neededExtraEntries++;
-//         }
-//         if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
-//         neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
+    for (int i=0; i<_usedFiles; i++) {
+        const FileEntry *cfe = &_fileStorage[i];
+        uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
+        for (int j=0; j<3; j++) {
+            if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
+            neededExtraEntries++;
+        }
+        if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
+        neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
         
-//         if (DTINDEX == processedEntries++){
-//             MOVEOFFSET;
-//         }
+        if (DTINDEX == processedEntries++){
+            MOVEOFFSET;
+        }
         
-//         for (int z=neededExtraEntries-2; z>=0; z--) {
-//             if (DTINDEX == processedEntries++){
-//                 MOVEOFFSET;
-//             }
-//         }
+        for (int z=neededExtraEntries-2; z>=0; z--) {
+            if (DTINDEX == processedEntries++){
+                MOVEOFFSET;
+            }
+        }
 
-//         if (DTINDEX == processedEntries++){
-//             if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
-//             const FAT_DirectoryTableFileEntry_t *dfe = (const FAT_DirectoryTableFileEntry_t*)ptr;
-//             char shortFilename[12] = {};
-//             snprintf(shortFilename, 9, "%s        ",cfe->filename);
-//             if (cfe->filenameLenNoSuffix > 8) {
-//                 snprintf(&shortFilename[5], 4, "\x7e%02d",i+1);
-//             }
-//             if (memcmp(shortFilename, dfe->shortFilename, 5) != 0){
-//               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
-//             }
-//             MOVEOFFSET;
-//         }
-//     }
+        if (DTINDEX == processedEntries++){
+            if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
+            const FAT_DirectoryTableFileEntry_t *dfe = (const FAT_DirectoryTableFileEntry_t*)ptr;
+            bool fileWasDeleted = false;
+            // {
+            //   char shortFilename[12] = {};
+            //   snprintf(shortFilename, 9, "%s        ",cfe->filename);
+            //   if (cfe->filenameLenNoSuffix > 8) {
+            //       snprintf(&shortFilename[5], 4, "\x7e%d",i+1);
+            //   }
+            //   fileWasDeleted = memcmp(shortFilename, dfe->shortFilename, 5) != 0;
+            // }
+            fileWasDeleted = dfe->shortFilename[0] == 0xe5;
+            if (fileWasDeleted){
+              if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
+            }
+            MOVEOFFSET;
+        }
+    }
 
-//     if (offset + size > SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR) size = SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR - didWrite - offset;
-//     didWrite += size;
+    if (offset + size > SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR) size = SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR - didWrite - offset;
+    didWrite += size;
     
-// error:
-//     if (err) {
-//         return -err;
-//     }
-//     return didWrite;
-// #undef MOVEOFFSET
-// #undef DTINDEX
-// }
+error:
+    if (err) {
+        return -err;
+    }
+    return didWrite;
+#undef MOVEOFFSET
+#undef DTINDEX
+}
 
 #pragma mark public
 #pragma mark host accessors
@@ -486,13 +491,12 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
     uint32_t sectorNum = offset / BYTES_PER_SECTOR;
     int32_t didWrite = 0;
     
-    // if (sectorNum >= SECTOR_ROOT_DIRECTORY && sectorNum < SECTOR_DATA_REGION) {
-    //   uint32_t sectionOffset = offset - SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR;
+    if (sectorNum >= SECTOR_ROOT_DIRECTORY && sectorNum < SECTOR_DATA_REGION) {
+      uint32_t sectionOffset = offset - SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR;
 
-    //   return catchRootDirectoryFileDeletion(sectionOffset, buf, size);
+      return catchRootDirectoryFileDeletion(sectionOffset, buf, size);
 
-    // }else 
-    if (sectorNum >= SECTOR_DATA_REGION) {
+    }else if (sectorNum >= SECTOR_DATA_REGION) {
         uint32_t sectionOffset = offset - SECTOR_DATA_REGION*BYTES_PER_SECTOR;
 
         uint32_t cluster = sectionOffset / BYTES_PER_CLUSTER;

@@ -51,6 +51,7 @@ public:
     ~EmuFATFSBase();
     
 #pragma mark host accessors
+    int32_t catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size);
     int32_t hostRead(uint32_t offset, void *buf, uint32_t size);
     int32_t hostWrite(uint32_t offset, const void *buf, uint32_t size);
     
