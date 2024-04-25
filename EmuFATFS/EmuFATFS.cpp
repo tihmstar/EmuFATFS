@@ -255,7 +255,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
       };
       snprintf(dfe.shortFilename, 9, "%s        ",cfe->filename);
       if (cfe->filenameLenNoSuffix > 8) {
-          snprintf(&dfe.shortFilename[5], 4, "\x7e%d",i+1);
+          snprintf(&dfe.shortFilename[6], 4, "\x7e%d",i+1);
       }
       memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
       uint8_t csum = lfn_checksum(dfe.shortFilename);
@@ -267,7 +267,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
           FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
           if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
           
-          memset(lfn, 0xFF, sizeof(*lfn));
+          memset(lfn, 0x00, sizeof(*lfn));
           lfn->sequenceNumber = neededExtraEntries | LFN_ENTRY_LAST;
           lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
           lfn->type = 0;
@@ -410,7 +410,7 @@ int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void
             //   }
             //   fileWasDeleted = memcmp(shortFilename, dfe->shortFilename, 5) != 0;
             // }
-            fileWasDeleted = dfe->shortFilename[0] == 0xe5;
+            fileWasDeleted = ((uint8_t)dfe->shortFilename[0] == 0xe5);
             if (fileWasDeleted){
               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
             }
