@@ -257,6 +257,11 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
       if (cfe->filenameLenNoSuffix > 8) {
           snprintf(&dfe.shortFilename[6], 4, "\x7e%d",i+1);
       }
+      for (int k=0; k<sizeof(dfe.shortFilename); k++) {
+          if (dfe.shortFilename[k] == '.'){
+              dfe.shortFilename[k] = '_';
+          }
+      }
       memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
       uint8_t csum = lfn_checksum(dfe.shortFilename);
       dfe.fileAttributes = FILEENTRY_ATTR_SYSTEM | (cfe->f_write == NULL ? FILEENTRY_ATTR_READONLY : 0);
@@ -549,6 +554,13 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
 
     snprintf(fnameDst, neededNameBytes+1, "%s%c%s%s", filename, '\0', filenameSuffix ? filenameSuffix : "", "   ");
 
+    for (int i=0; i<neededNameBytes-4; i++) {
+        const char *bad_chars = "*?<>|\"\\/:";
+        if (strchr(bad_chars, fnameDst[i])){
+            fnameDst[i] = '_';
+        }
+    }
+    
     {
         FileEntry *cfe = &_fileStorage[_usedFiles];
         cfe->f_read = f_read;
