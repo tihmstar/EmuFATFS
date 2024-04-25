@@ -115,18 +115,18 @@ int32_t EmuFATFSBase::readFileAllocationTable(uint32_t offset, void *buf, uint32
     for (int i=0; i<_usedFiles; i++) {
         const FileEntry *cur = &_fileStorage[i];
         
-        uint16_t usedSectors = (cur->fileSize/BYTES_PER_SECTOR);
-        if (cur->fileSize & (BYTES_PER_SECTOR-1)) usedSectors++;
+        uint16_t usedClusters = (cur->fileSize/(BYTES_PER_SECTOR*SECTORS_PER_CLUSTER));
+        if (cur->fileSize & ((BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)-1)) usedClusters++;
         
-        if (usedSectors) {
-            for (int32_t z = 0; z<usedSectors-1; z++) {
+        if (usedClusters) {
+            for (int32_t z = 0; z<usedClusters-1; z++) {
                 if (size < sizeof(*fe)) goto error;
                 if (cur->startCluster + z != findex) continue;
                 *fe++ = ++findex; didRead+=2; size-=2;
             }
 
             if (size < sizeof(*fe)) goto error;
-            if (cur->startCluster + usedSectors-1 != findex) continue;
+            if (cur->startCluster + usedClusters-1 != findex) continue;
             *fe++ = 0xFFFF; didRead+=2; size-=2;
             findex++;
         }
