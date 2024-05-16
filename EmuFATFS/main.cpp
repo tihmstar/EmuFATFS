@@ -20,6 +20,11 @@ int32_t info_read_cb(uint32_t foffset, void *buf, uint32_t bufSize, const char *
     return bufSize;
 }
 
+void cb_newFile(const char *filename, const char filenameSuffix[3], uint32_t fileSize){
+
+  printf("",filename,filenameSuffix);
+}
+
 
 int main(int argc, const char * argv[]) {
     info("%s",VERSION_STRING);

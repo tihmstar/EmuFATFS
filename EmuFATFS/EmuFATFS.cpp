@@ -12,8 +12,10 @@
 
 #ifdef DEBUG
 #   define cretassure(cond, errstr ...) do{ if ((cond) == 0){err=__LINE__;printf(errstr); goto error;} }while(0)
+#   define debug(errstr...) printf(errstr)
 #else
 #   define cretassure(cond, errstr ...) do{ if ((cond) == 0){err=__LINE__; goto error;} }while(0)
+#   define debug(errstr...) 
 #endif
 
 #define FAT16_THRESHOLD 65525 //https://github.com/dosfstools/dosfstools/blob/master/src/boot.c#L52
@@ -366,11 +368,11 @@ error:
 #undef DTINDEX
 }
 
-int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size){
+int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf, uint32_t size){
     int err = 0;
     int32_t didWrite = 0;
     const uint8_t *ptr = (const uint8_t*)buf;
-    FAT_DirectoryTableFileEntry_t dfe = {};    
+    FAT_DirectoryTableFileEntry_t dfe = {};
     uint32_t processedEntries = 1;
     
 #define DTINDEX (offset / sizeof(dfe))
@@ -407,19 +409,90 @@ int32_t EmuFATFSBase::catchRootDirectoryFileDeletion(uint32_t offset, const void
             if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
             const FAT_DirectoryTableFileEntry_t *dfe = (const FAT_DirectoryTableFileEntry_t*)ptr;
             bool fileWasDeleted = false;
-            // {
-            //   char shortFilename[12] = {};
-            //   snprintf(shortFilename, 9, "%s        ",cfe->filename);
-            //   if (cfe->filenameLenNoSuffix > 8) {
-            //       snprintf(&shortFilename[5], 4, "\x7e%d",i+1);
-            //   }
-            //   fileWasDeleted = memcmp(shortFilename, dfe->shortFilename, 5) != 0;
-            // }
             fileWasDeleted = ((uint8_t)dfe->shortFilename[0] == 0xe5);
             if (fileWasDeleted){
               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
             }
             MOVEOFFSET;
+        }
+    }
+    
+    {
+        int remainingSequences = 0;
+        char curFilenameBuf[0x101] = {};
+        char *curFilename = &curFilenameBuf[0x100];
+        uint8_t curChecksum = 0;
+        
+        while (size >= sizeof(FAT_DirectoryTableEntry_t)) {
+            MOVEOFFSET;
+            FAT_DirectoryTableEntry_t *e = ((FAT_DirectoryTableEntry_t*)ptr)-1;
+            if (e->lfn.attributes == FILEENTRY_ATTR_LFN_ENTRY) {
+                if (remainingSequences == 0) {
+                    remainingSequences = 0;
+                    curFilename = &curFilenameBuf[0x100];
+                    curChecksum = 0;
+                    if ((e->lfn.sequenceNumber & 0xF0) == LFN_ENTRY_LAST) {
+                        remainingSequences = e->lfn.sequenceNumber & 0x3F;
+                        curChecksum = e->lfn.checksum;
+                    }
+                }
+                if ((e->lfn.sequenceNumber & 0x3F) != remainingSequences-- || e->lfn.checksum != curChecksum) {
+                    remainingSequences = 0;
+                    curFilename = &curFilenameBuf[0x100];
+                    curChecksum = 0;
+                    continue;
+                }
+                int curPartLen = 0;
+                for (int i=0; i<4; i++) {
+                    if (e->lfn.name1[i] == 0 || e->lfn.name1[i] == 0xffff) goto have_curPartLen;
+                    curPartLen++;
+                }
+                for (int i=0; i<5; i++) {
+                    if (e->lfn.name2[i] == 0 || e->lfn.name2[i] == 0xffff) goto have_curPartLen;
+                    curPartLen++;
+                }
+                for (int i=0; i<2; i++) {
+                    if (e->lfn.name3[i] == 0 || e->lfn.name3[i] == 0xffff) goto have_curPartLen;
+                    curPartLen++;
+                }
+            have_curPartLen:
+                curFilename-=curPartLen;
+                for (int i=0; i<curPartLen && i<4; i++) {
+                    curFilename[i] = e->lfn.name1[i];
+                }
+                for (int i=4; i<curPartLen && i<4+5; i++) {
+                    curFilename[i] = e->lfn.name2[i-4];
+                }
+                for (int i=4+5; i<curPartLen && i<4+5+2; i++) {
+                    curFilename[i] = e->lfn.name3[i-(4+5)];
+                }
+            }else if (_newfilecb){
+                if (*curFilename) {
+                    if (remainingSequences == 0 && lfn_checksum(e->dfe.shortFilename) == curChecksum) {
+                        _newfilecb(curFilename,e->dfe.filenameExt,e->dfe.fileSize);
+                    }
+                }else if (*e->dfe.shortFilename != 0x00 && *e->dfe.shortFilename != (char)0xFF){
+                    int fnamelen = 0;
+                    for (; fnamelen < 8; fnamelen++) {
+                        char c = e->dfe.shortFilename[fnamelen];
+                        if (c == ' ') break;
+                        curFilenameBuf[fnamelen] = c;
+                    }
+                    if (e->dfe.filenameExt[0] != ' ') {
+                        curFilenameBuf[fnamelen++] = '.';
+                        curFilenameBuf[fnamelen++] = e->dfe.filenameExt[0];
+                        if (e->dfe.filenameExt[1] != ' ') {
+                            curFilenameBuf[fnamelen++] = e->dfe.filenameExt[1];
+                            if (e->dfe.filenameExt[2] != ' ') curFilenameBuf[fnamelen++] = e->dfe.filenameExt[2];
+                        }
+                    }
+                    curFilenameBuf[fnamelen] = '\0';
+                    _newfilecb(curFilename,e->dfe.filenameExt,e->dfe.fileSize);
+                }
+                remainingSequences = 0;
+                curFilename = &curFilenameBuf[0x100];
+                curChecksum = 0;
+            }
         }
     }
 
@@ -497,10 +570,10 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
     int32_t didWrite = 0;
     
     if (sectorNum >= SECTOR_ROOT_DIRECTORY && sectorNum < SECTOR_DATA_REGION) {
-      uint32_t sectionOffset = offset - SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR;
+        uint32_t sectionOffset = offset - SECTOR_ROOT_DIRECTORY*BYTES_PER_SECTOR;
 
-      return catchRootDirectoryFileDeletion(sectionOffset, buf, size);
-
+        return catchRootDirectoryAccess(sectionOffset, buf, size);
+        
     }else if (sectorNum >= SECTOR_DATA_REGION) {
         uint32_t sectionOffset = offset - SECTOR_DATA_REGION*BYTES_PER_SECTOR;
 
@@ -583,4 +656,8 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
     
 error:
     return -err;
+}
+
+void EmuFATFSBase::registerNewfileCallback(cb_newFile f_newfilecb){
+    _newfilecb = f_newfilecb;
 }

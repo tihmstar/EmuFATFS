@@ -18,7 +18,8 @@ class EmuFATFSBase {
 public:
     typedef int32_t (*cb_read)(uint32_t offset, void *buf, uint32_t size, const char *filename);
     typedef int32_t (*cb_write)(uint32_t offset, const void *buf, uint32_t size, const char *filename);
-    
+    typedef void (*cb_newFile)(const char *filename, const char filenameSuffix[3], uint32_t fileSize);
+
     struct FileEntry{
         cb_read f_read;
         cb_write f_write;
@@ -39,19 +40,27 @@ private:
 
     char _volumeLabel[12];
     uint16_t _nextFreeCluster;
+    cb_newFile _newfilecb;
 
+#ifdef XCODE
+public:
+#endif
+#pragma mark private
     const FileEntry *getFileForSector(uint16_t sector);
-    
     int32_t readFileAllocationTable(uint32_t offset, void *buf, uint32_t size);
     int32_t readBootsector(uint32_t offset, void *buf, uint32_t size);
     int32_t readRootDirectory(uint32_t offset, void *buf, uint32_t size);
 
+    int32_t catchRootDirectoryAccess(uint32_t offset, const void *buf, uint32_t size);
+
+#ifndef XCODE
 public:
+#endif
+#pragma mark public
     EmuFATFSBase(FileEntry *fileStorage, uint16_t maxFileStorageEntires, char *filenamesBuf, size_t filenamesBufSize, const char *volumeLabel = NULL);
     ~EmuFATFSBase();
     
 #pragma mark host accessors
-    int32_t catchRootDirectoryFileDeletion(uint32_t offset, const void *buf, uint32_t size);
     int32_t hostRead(uint32_t offset, void *buf, uint32_t size);
     int32_t hostWrite(uint32_t offset, const void *buf, uint32_t size);
     
@@ -61,7 +70,7 @@ public:
 #pragma mark emu providers
     void resetFiles();
     int addFile(const char *filename, const char *filenameSuffix, uint32_t fileSize, cb_read f_read, cb_write f_write = NULL);
-    
+    void registerNewfileCallback(cb_newFile f_newfilecb);
 };
 
 template <uint16_t TMPL_max_Files = 5, size_t TMPL_filenames_storage_size = 0x100>
