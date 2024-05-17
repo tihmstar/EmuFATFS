@@ -450,11 +450,11 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
                     continue;
                 }
                 int curPartLen = 0;
-                for (int i=0; i<4; i++) {
+                for (int i=0; i<5; i++) {
                     if (e->lfn.name1[i] == 0 || e->lfn.name1[i] == 0xffff) goto have_curPartLen;
                     curPartLen++;
                 }
-                for (int i=0; i<5; i++) {
+                for (int i=0; i<6; i++) {
                     if (e->lfn.name2[i] == 0 || e->lfn.name2[i] == 0xffff) goto have_curPartLen;
                     curPartLen++;
                 }
@@ -464,14 +464,14 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
                 }
             have_curPartLen:
                 curFilename-=curPartLen;
-                for (int i=0; i<curPartLen && i<4; i++) {
+                for (int i=0; i<curPartLen && i<5; i++) {
                     curFilename[i] = e->lfn.name1[i];
                 }
-                for (int i=4; i<curPartLen && i<4+5; i++) {
-                    curFilename[i] = e->lfn.name2[i-4];
+                for (int i=5; i<curPartLen && i<5+6; i++) {
+                    curFilename[i] = e->lfn.name2[i-5];
                 }
-                for (int i=4+5; i<curPartLen && i<4+5+2; i++) {
-                    curFilename[i] = e->lfn.name3[i-(4+5)];
+                for (int i=5+6; i<curPartLen && i<5+6+2; i++) {
+                    curFilename[i] = e->lfn.name3[i-(5+6)];
                 }
             }else if (_newfilecb){
                 if (*curFilename) {
