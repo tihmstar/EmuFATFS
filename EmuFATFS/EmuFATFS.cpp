@@ -23,11 +23,11 @@
 using namespace tihmstar;
 
 
-#define BYTES_PER_SECTOR 0x1000
+#define BYTES_PER_SECTOR _bytesPerSector
 #define SECTORS_PER_CLUSTER 128 //128 max allowed value
 
 #define RESERVED_SECTORS_CNT 1
-#define SECTORS_PER_FAT (0x20000 / BYTES_PER_SECTOR)
+#define SECTORS_PER_FAT static_cast<uint16_t>(0x20000 / BYTES_PER_SECTOR)
 #define SECTORS_PER_ROOT_DIRECTORY (0x10000*2 / BYTES_PER_SECTOR)
 
 #define SECTOR_BOOTSECTOR       (0)
@@ -39,7 +39,7 @@ using namespace tihmstar;
 #define BYTES_PER_CLUSTER (BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
 #define FIRST_DATA_CLUSTER      2
 
-#define TOTAL_SECTORS (FAT16_THRESHOLD*512/BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
+#define TOTAL_SECTORS static_cast<uint32_t>(FAT16_THRESHOLD*512/BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)
 
 #pragma mark helpers
 static uint8_t lfn_checksum(const char *filename){
@@ -54,9 +54,10 @@ static uint8_t lfn_checksum(const char *filename){
 
 
 #pragma mark EmuFATFS
-EmuFATFSBase::EmuFATFSBase(FileEntry *fileStorage, uint16_t maxFileStorageEntires, char *filenamesBuf, size_t filenamesBufSize, const char *volumeLabel)
+EmuFATFSBase::EmuFATFSBase(FileEntry *fileStorage, uint16_t maxFileStorageEntires, char *filenamesBuf, size_t filenamesBufSize, const char *volumeLabel, uint16_t bytesPerSector)
 : _fileStorage{fileStorage}, _maxFileStorageEntires{maxFileStorageEntires}, _usedFiles{0}
 , _filenamesBuf{filenamesBuf}, _filenamesBufSize{filenamesBufSize}, _usedFilenamesBytes{0}
+, _bytesPerSector(bytesPerSector)
 , _volumeLabel{}, _nextFreeCluster{FIRST_DATA_CLUSTER}
 {
     memset(_volumeLabel, ' ', sizeof(_volumeLabel));
@@ -161,7 +162,7 @@ int32_t EmuFATFSBase::readBootsector(uint32_t offset, void *buf, uint32_t size){
                 .sectorsPerCluster = SECTORS_PER_CLUSTER, //128 is maximum
                 .reservedSectors = RESERVED_SECTORS_CNT,
                 .numberOfFATs = 2, //keep this to "2" for compatibility reasons
-                .rootdirectoryEntries = SECTORS_PER_FAT*BYTES_PER_SECTOR / 32,
+                .rootdirectoryEntries = static_cast<uint16_t>(SECTORS_PER_FAT*BYTES_PER_SECTOR / 32),
                 .totalSectors = 0, //more than 0x10000 sectors
                 .mediaDescriptor = 0xF8, //"fixed disk" (i.e. partition on a hard drive)
                 .sectorsPerFAT = SECTORS_PER_FAT,

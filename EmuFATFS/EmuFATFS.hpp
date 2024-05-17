@@ -38,6 +38,8 @@ private:
     const size_t _filenamesBufSize;
     size_t _usedFilenamesBytes;
 
+    uint16_t _bytesPerSector;
+    
     char _volumeLabel[12];
     uint16_t _nextFreeCluster;
     cb_newFile _newfilecb;
@@ -57,7 +59,7 @@ public:
 public:
 #endif
 #pragma mark public
-    EmuFATFSBase(FileEntry *fileStorage, uint16_t maxFileStorageEntires, char *filenamesBuf, size_t filenamesBufSize, const char *volumeLabel = NULL);
+    EmuFATFSBase(FileEntry *fileStorage, uint16_t maxFileStorageEntires, char *filenamesBuf, size_t filenamesBufSize, const char *volumeLabel = NULL, uint16_t bytesPerSector = 0x400);
     ~EmuFATFSBase();
     
 #pragma mark host accessors
@@ -78,8 +80,8 @@ class EmuFATFS : public EmuFATFSBase{
     FileEntry _fileStorage[TMPL_max_Files];
     char _filenamesStorage[TMPL_filenames_storage_size];
 public:
-    EmuFATFS(const char *volumeLabel = NULL)
-    : EmuFATFSBase(_fileStorage, TMPL_max_Files, _filenamesStorage, TMPL_filenames_storage_size, volumeLabel){
+    EmuFATFS(const char *volumeLabel = NULL, uint16_t bytesPerSector = 0x400)
+    : EmuFATFSBase(_fileStorage, TMPL_max_Files, _filenamesStorage, TMPL_filenames_storage_size, volumeLabel, bytesPerSector){
         memset(_fileStorage, 0, sizeof(_fileStorage));
         memset(_filenamesStorage, 0, sizeof(_filenamesStorage));
     }
