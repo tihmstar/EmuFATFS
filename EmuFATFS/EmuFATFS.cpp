@@ -394,10 +394,13 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
     
     for (int i=0; i<_usedFiles; i++) {
         const FileEntry *cfe = &_fileStorage[i];
-        uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
-        for (int j=0; j<3; j++) {
-            if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
-            neededExtraEntries++;
+        uint8_t neededExtraEntries = cfe->filenameLenNoSuffix;
+        if (cfe->filename[cfe->filenameLenNoSuffix+1] != ' '){
+          neededExtraEntries+=2;
+          for (int j=1; j<3; j++) {
+              if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
+              neededExtraEntries++;
+          }
         }
         if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
         neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;

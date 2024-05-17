@@ -31,8 +31,15 @@ int main(int argc, const char * argv[]) {
     
     tihmstar::EmuFATFS fs;
     
-    fs.addFile("info_file", "txt", 0x1000000, info_read_cb);
-    
+    fs.addFile("hello world.txt", NULL, 0x1000000, info_read_cb);
+    fs.registerNewfileCallback(cb_newFile);
+    {
+        uint8_t buf[0x2000];
+        FILE *f=fopen("/Users/tihmstar/Desktop/ptr.bin","rb");
+        fread(buf, 1, sizeof(buf), f);
+        fclose(f);
+        fs.catchRootDirectoryAccess(0,buf, sizeof(buf));
+    }
     
     
     FILE *f = fopen("disk.bin", "wb");
