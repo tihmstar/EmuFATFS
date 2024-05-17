@@ -226,10 +226,13 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
   
   for (int i=0; i<_usedFiles; i++) {
       const FileEntry *cfe = &_fileStorage[i];
-      uint8_t neededExtraEntries = cfe->filenameLenNoSuffix+1;
-      for (int j=0; j<3; j++) {
-          if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
-          neededExtraEntries++;
+      uint8_t neededExtraEntries = cfe->filenameLenNoSuffix;
+      if (cfe->filename[cfe->filenameLenNoSuffix+1] != ' '){
+        neededExtraEntries+=2;
+        for (int j=1; j<3; j++) {
+            if (cfe->filename[cfe->filenameLenNoSuffix+1+j] == ' ') break;
+            neededExtraEntries++;
+        }
       }
       if (neededExtraEntries % LFN_ENTRY_MAX_NAME_LEN) neededExtraEntries += LFN_ENTRY_MAX_NAME_LEN;
       neededExtraEntries /= LFN_ENTRY_MAX_NAME_LEN;
@@ -269,7 +272,6 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
       uint8_t csum = lfn_checksum(dfe.shortFilename);
       dfe.fileAttributes = FILEENTRY_ATTR_SYSTEM | (cfe->f_write == NULL ? FILEENTRY_ATTR_READONLY : 0);
       
-
       if (DTINDEX == processedEntries++){
           //first entry marking end of name
           FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
@@ -296,7 +298,11 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
               if (fnameend) {
                   c = *fnameend++;
                   if (!c){
-                      c = '.';
+                      if (cfe->filename[cfe->filenameLenNoSuffix+1] == ' '){
+                        c = '\0';
+                      }else{
+                        c = '.';
+                      }
                       fnameend = NULL;
                   }
               }else{
