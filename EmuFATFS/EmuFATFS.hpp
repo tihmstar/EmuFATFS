@@ -18,7 +18,7 @@ class EmuFATFSBase {
 public:
     typedef int32_t (*cb_read)(uint32_t offset, void *buf, uint32_t size, const char *filename);
     typedef int32_t (*cb_write)(uint32_t offset, const void *buf, uint32_t size, const char *filename);
-    typedef void (*cb_newFile)(const char *filename, const char filenameSuffix[3], uint32_t fileSize);
+    typedef void (*cb_newFile)(const char *filename, const char filenameSuffix[3], uint32_t fileSize, uint32_t clusterLocation);
 
     struct FileEntry{
         cb_read f_read;
@@ -27,6 +27,7 @@ public:
         uint32_t filenameLenNoSuffix;
         uint32_t fileSize;
         uint32_t startCluster;
+        bool isDynamicFile;
     };
     
 private:
@@ -54,6 +55,7 @@ public:
     int32_t readRootDirectory(uint32_t offset, void *buf, uint32_t size);
 
     int32_t catchRootDirectoryAccess(uint32_t offset, const void *buf, uint32_t size);
+    int32_t catchFileAllocationTableAccess(uint32_t offset, const void *buf, uint32_t size);
 
 #ifndef XCODE
 public:
@@ -68,10 +70,12 @@ public:
     
     uint32_t diskBlockNum();
     uint32_t diskBlockSize();
+    uint32_t bytesPerCluster();
 
 #pragma mark emu providers
     void resetFiles();
     int addFile(const char *filename, const char *filenameSuffix, uint32_t fileSize, cb_read f_read, cb_write f_write = NULL);
+    int addFileDynamic(const char *filename, const char *filenameSuffix, uint32_t fileSize, uint32_t startCluster, cb_read f_read, cb_write f_write = NULL);
     void registerNewfileCallback(cb_newFile f_newfilecb);
 };
 

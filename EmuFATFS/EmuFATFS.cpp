@@ -120,6 +120,7 @@ int32_t EmuFATFSBase::readFileAllocationTable(uint32_t offset, void *buf, uint32
         
         uint16_t usedClusters = (cur->fileSize/(BYTES_PER_SECTOR*SECTORS_PER_CLUSTER));
         if (cur->fileSize & ((BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)-1)) usedClusters++;
+        if (!usedClusters) usedClusters = 1;
         
         if (usedClusters) {
             for (int32_t z = 0; z<usedClusters-1; z++) {
@@ -393,7 +394,7 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
     }
     
     for (int i=0; i<_usedFiles; i++) {
-        const FileEntry *cfe = &_fileStorage[i];
+        FileEntry *cfe = &_fileStorage[i];
         uint8_t neededExtraEntries = cfe->filenameLenNoSuffix;
         if (cfe->filename[cfe->filenameLenNoSuffix+1] != ' '){
           neededExtraEntries+=2;
@@ -420,8 +421,22 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
             const FAT_DirectoryTableFileEntry_t *dfe = (const FAT_DirectoryTableFileEntry_t*)ptr;
             bool fileWasDeleted = false;
             fileWasDeleted = ((uint8_t)dfe->shortFilename[0] == 0xe5);
-            if (fileWasDeleted){
+            if (fileWasDeleted || (dfe->fileSize == 0 && cfe->fileSize != 0)){
               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
+            }else if (cfe->isDynamicFile){
+              uint16_t oldClusterCount = cfe->fileSize / bytesPerCluster();
+              uint16_t newClusterCount = dfe->fileSize / bytesPerCluster();
+
+              if (cfe->fileSize & (bytesPerCluster()-1)) oldClusterCount++;
+              if (dfe->fileSize & (bytesPerCluster()-1)) newClusterCount++;
+
+              if (!oldClusterCount) oldClusterCount = 1;
+              if (!newClusterCount) newClusterCount = 1;
+
+              cfe->startCluster = dfe->clusterLocation;
+              if (oldClusterCount == newClusterCount){
+                cfe->fileSize = dfe->fileSize;
+              }
             }
             MOVEOFFSET;
         }
@@ -479,7 +494,7 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
             }else if (_newfilecb){
                 if (*curFilename) {
                     if (remainingSequences == 0 && lfn_checksum(e->dfe.shortFilename) == curChecksum) {
-                        _newfilecb(curFilename,e->dfe.filenameExt,e->dfe.fileSize);
+                        _newfilecb(curFilename,e->dfe.filenameExt,e->dfe.fileSize, e->dfe.clusterLocation);
                     }
                 }else if (*e->dfe.shortFilename != 0x00 && *e->dfe.shortFilename != (char)0xFF){
                     int fnamelen = 0;
@@ -497,7 +512,7 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
                         }
                     }
                     curFilenameBuf[fnamelen] = '\0';
-                    _newfilecb(curFilename,e->dfe.filenameExt,e->dfe.fileSize);
+                    // _newfilecb(curFilenameBuf,e->dfe.filenameExt,e->dfe.fileSize);
                 }
                 remainingSequences = 0;
                 curFilename = &curFilenameBuf[0x100];
@@ -517,6 +532,71 @@ error:
 #undef MOVEOFFSET
 #undef DTINDEX
 }
+
+//int32_t EmuFATFSBase::catchFileAllocationTableAccess(uint32_t offset, const void *buf, uint32_t size){
+//    int err = 0;
+//    int32_t didWrite = 0;
+//    const uint16_t *fe = (const uint16_t*)buf;
+//    uint16_t findex = offset/2;
+//
+//    cretassure((size & 1) == 0, "read size needs to be 2 bytes aligned!");
+//    cretassure((offset & 1) == 0, "offset needs to be 2 bytes aligned!");
+//    
+//#define MOVEFE do { fe++; size-=2; offset +=2; didWrite +=2; } while(0)
+//    if (size < sizeof(*fe))goto done;
+//    MOVEFE; //FAT16 type  (boot sector)
+//    if (size < sizeof(*fe))goto done;
+//
+//    while (size >= sizeof(*fe)*2){
+//        MOVEFE; //FAT16 type  (volume label) (on first iteration)
+//
+//        for (int i=0; i<_usedFiles; i++) {
+//            const FileEntry *cur = &_fileStorage[i];
+//            uint16_t usedClusters = (cur->fileSize/(BYTES_PER_SECTOR*SECTORS_PER_CLUSTER));
+//            
+//        }
+//
+//    }
+//    
+//    /*
+//     for (int i=0; i<_usedFiles; i++) {
+//         const FileEntry *cur = &_fileStorage[i];
+//         
+//         uint16_t usedClusters = (cur->fileSize/(BYTES_PER_SECTOR*SECTORS_PER_CLUSTER));
+//         if (cur->fileSize & ((BYTES_PER_SECTOR*SECTORS_PER_CLUSTER)-1)) usedClusters++;
+//         
+//         if (usedClusters) {
+//             for (int32_t z = 0; z<usedClusters-1; z++) {
+//                 if (size < sizeof(*fe)) goto error;
+//                 if (cur->startCluster + z != findex) continue;
+//                 *fe++ = ++findex; didRead+=2; size-=2;
+//             }
+//
+//             if (size < sizeof(*fe)) goto error;
+//             if (cur->startCluster + usedClusters-1 != findex) continue;
+//             *fe++ = 0xFFFF; didRead+=2; size-=2;
+//             findex++;
+//         }
+//     }
+//     
+//     if (offset + size > SECTORS_PER_FAT*BYTES_PER_SECTOR) size = SECTORS_PER_FAT*BYTES_PER_SECTOR - didRead - offset;
+//     memset(fe, 0, size); didRead += size;
+//     
+// error:
+//     if (err) {
+//         return -err;
+//     }
+//     return didRead;
+// #undef putentry
+//     */
+//done:
+//    MOVEFE;
+//error:
+//    if (err) {
+//        return -err;
+//    }
+//    return didWrite;
+//}
 
 #pragma mark public
 #pragma mark host accessors
@@ -556,9 +636,12 @@ int32_t EmuFATFSBase::hostRead(uint32_t offset, void *buf, uint32_t size){
             uint32_t fileStartCluster = cfe->startCluster - FIRST_DATA_CLUSTER;
             uint32_t fileClusterCnt = cfe->fileSize / BYTES_PER_CLUSTER;
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
+            if (!fileClusterCnt) fileClusterCnt = 1;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
                 uint32_t fileOffset = sectionOffset - fileStartCluster * BYTES_PER_CLUSTER;
-                didRead = cfe->f_read(fileOffset, buf, size, cfe->filename);
+                if (fileOffset < cfe->fileSize){
+                  didRead = cfe->f_read(fileOffset, buf, size, cfe->filename);
+                }
                 break;
             }
         }
@@ -596,9 +679,12 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
             uint32_t fileStartCluster = cfe->startCluster - FIRST_DATA_CLUSTER;
             uint32_t fileClusterCnt = cfe->fileSize / BYTES_PER_CLUSTER;
             if (cfe->fileSize & (BYTES_PER_CLUSTER-1)) fileClusterCnt++;
+            if (!fileClusterCnt) fileClusterCnt = 1;
             if (cluster >= fileStartCluster && cluster < fileStartCluster + fileClusterCnt) {
                 uint32_t fileOffset = sectionOffset - fileStartCluster * BYTES_PER_CLUSTER;
-                didWrite = cfe->f_write(fileOffset, buf, size, cfe->filename);
+                if (fileOffset < cfe->fileSize){
+                  didWrite = cfe->f_write(fileOffset, buf, size, cfe->filename);
+                }              
                 break;
             }
         }
@@ -613,6 +699,10 @@ uint32_t EmuFATFSBase::diskBlockNum(){
 
 uint32_t EmuFATFSBase::diskBlockSize(){
     return BYTES_PER_SECTOR;
+}
+
+uint32_t EmuFATFSBase::bytesPerCluster(){
+    return BYTES_PER_CLUSTER;
 }
 
 
@@ -634,6 +724,7 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
     cretassure(_usedFiles < _maxFileStorageEntires, "Not enough file entries left");
     cretassure(f_read, "No read function provided");
     cretassure(fileSize, "Zero byte files are not supported");
+    cretassure(_nextFreeCluster, "nextFreeCluster shouldn't be zero!");
 
     snprintf(fnameDst, neededNameBytes+1, "%s%c%s%s", filename, '\0', filenameSuffix ? filenameSuffix : "", "   ");
 
@@ -652,9 +743,12 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
         cfe->filenameLenNoSuffix = (uint32_t)strlen(fnameDst);
         cfe->fileSize = fileSize;
         cfe->startCluster = _nextFreeCluster;
+        cfe->isDynamicFile = false;
 
         uint32_t neededClusters = fileSize / BYTES_PER_CLUSTER;
         if (fileSize & (BYTES_PER_CLUSTER -1)) neededClusters++;
+
+        if (!neededClusters) neededClusters = 1;
 
         cretassure(cfe->startCluster + neededClusters < 0x10000, "Not enough sectors left to store file");
         
@@ -667,6 +761,47 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
 error:
     return -err;
 }
+
+int EmuFATFSBase::addFileDynamic(const char *filename, const char *filenameSuffix, uint32_t fileSize, uint32_t startCluster, cb_read f_read, cb_write f_write){
+    int err = 0;
+    
+    char *fnameDst = &_filenamesBuf[_usedFilenamesBytes];
+    size_t fnameSize = _filenamesBufSize-_usedFilenamesBytes;
+    size_t neededNameBytes = strlen(filename) + 1 + 3;
+
+    cretassure(neededNameBytes <= fnameSize, "Not enough space to add filename");
+    cretassure(_usedFiles < _maxFileStorageEntires, "Not enough file entries left");
+    cretassure(f_read, "No read function provided");
+
+    snprintf(fnameDst, neededNameBytes+1, "%s%c%s%s", filename, '\0', filenameSuffix ? filenameSuffix : "", "   ");
+
+    for (int i=0; i<neededNameBytes-4; i++) {
+        const char *bad_chars = "*?<>|\"\\/:";
+        if (strchr(bad_chars, fnameDst[i])){
+            fnameDst[i] = '_';
+        }
+    }
+    
+    _nextFreeCluster = 0; //disable adding files statically
+    
+    {
+        FileEntry *cfe = &_fileStorage[_usedFiles];
+        cfe->f_read = f_read;
+        cfe->f_write = f_write;
+        cfe->filename = fnameDst;
+        cfe->filenameLenNoSuffix = (uint32_t)strlen(fnameDst);
+        cfe->fileSize = fileSize;
+        cfe->startCluster = startCluster;
+        cfe->isDynamicFile = true;
+    }
+    
+    _usedFiles++;
+    _usedFilenamesBytes += neededNameBytes;
+    
+error:
+    return -err;
+}
+
 
 void EmuFATFSBase::registerNewfileCallback(cb_newFile f_newfilecb){
     _newfilecb = f_newfilecb;
