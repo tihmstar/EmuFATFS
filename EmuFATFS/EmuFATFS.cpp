@@ -265,11 +265,15 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
           snprintf(&dfe.shortFilename[6], 4, "\x7e%d",i+1);
       }
       for (int k=0; k<sizeof(dfe.shortFilename); k++) {
+          dfe.shortFilename[k] = toupper(dfe.shortFilename[k]);
           if (dfe.shortFilename[k] == '.'){
               dfe.shortFilename[k] = '_';
           }
       }
-      memcpy(dfe.filenameExt, &cfe->filename[cfe->filenameLenNoSuffix+1], 3);
+      for (int z = 0; z < 3; z++){
+        dfe.filenameExt[z] = toupper(cfe->filename[cfe->filenameLenNoSuffix+1+z]);
+      }
+
       uint8_t csum = lfn_checksum(dfe.shortFilename);
       dfe.fileAttributes = FILEENTRY_ATTR_SYSTEM | (cfe->f_write == NULL ? FILEENTRY_ATTR_READONLY : 0);
       
@@ -278,7 +282,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
           FAT_DirectoryTableLFNEntry_t *lfn = (FAT_DirectoryTableLFNEntry_t*)ptr;
           if (size < sizeof(FAT_DirectoryTableEntry_t)) goto error;
           
-          memset(lfn, 0x00, sizeof(*lfn));
+          memset(lfn, 0xFF, sizeof(*lfn));
           lfn->sequenceNumber = neededExtraEntries | LFN_ENTRY_LAST;
           lfn->attributes = FILEENTRY_ATTR_LFN_ENTRY;
           lfn->type = 0;
