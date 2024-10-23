@@ -298,7 +298,7 @@ int32_t EmuFATFSBase::readRootDirectory(uint32_t offset, void *buf, uint32_t siz
               fnameendLen = strlen(fnameend);
           }
 
-          for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+3; j++) {
+          for (int j = 0; j<LFN_ENTRY_MAX_NAME_LEN && j <=fnameendLen+1+3; j++) {
               char c = '\0';
               if (fnameend) {
                   c = *fnameend++;
