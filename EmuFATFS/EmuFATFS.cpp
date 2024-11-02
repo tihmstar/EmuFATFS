@@ -426,6 +426,7 @@ int32_t EmuFATFSBase::catchRootDirectoryAccess(uint32_t offset, const void *buf,
             bool fileWasDeleted = false;
             fileWasDeleted = ((uint8_t)dfe->shortFilename[0] == 0xe5);
             if (fileWasDeleted || (dfe->fileSize == 0 && cfe->fileSize != 0)){
+              cfe->startCluster = 0;
               if (cfe->f_write) cfe->f_write(-1, NULL, 0, cfe->filename);
             }else if (cfe->isDynamicFile){
               uint16_t oldClusterCount = cfe->fileSize / bytesPerCluster();
@@ -652,7 +653,7 @@ int32_t EmuFATFSBase::hostRead(uint32_t offset, void *buf, uint32_t size){
 
         if (didRead < 0) didRead = 0;
         if (size > BYTES_PER_SECTOR*SECTORS_PER_CLUSTER) size = BYTES_PER_CLUSTER;
-        memset(&ptr[didRead], 0, size-didRead);
+        if (size>=didRead) memset(&ptr[didRead], 0, size-didRead);
         return size;
     }
 
@@ -677,8 +678,15 @@ int32_t EmuFATFSBase::hostWrite(uint32_t offset, const void *buf, uint32_t size)
         uint32_t cluster = sectionOffset / BYTES_PER_CLUSTER;
         
         for (int i=0; i<_usedFiles; i++) {
-            const FileEntry *cfe = &_fileStorage[i];
+            FileEntry *cfe = &_fileStorage[i];
             if (!cfe->f_write) continue;
+
+            if (cfe->isDynamicFile && cfe->startCluster == 0){
+              /*
+                Best we can do is to guess the target cluster :(
+              */
+              cfe->startCluster = cluster + FIRST_DATA_CLUSTER;
+            }
             
             uint32_t fileStartCluster = cfe->startCluster - FIRST_DATA_CLUSTER;
             uint32_t fileClusterCnt = cfe->fileSize / BYTES_PER_CLUSTER;
@@ -727,7 +735,6 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
     cretassure(neededNameBytes <= fnameSize, "Not enough space to add filename");
     cretassure(_usedFiles < _maxFileStorageEntires, "Not enough file entries left");
     cretassure(f_read, "No read function provided");
-    cretassure(fileSize, "Zero byte files are not supported");
     cretassure(_nextFreeCluster, "nextFreeCluster shouldn't be zero!");
 
     snprintf(fnameDst, neededNameBytes+1, "%s%c%s%s", filename, '\0', filenameSuffix ? filenameSuffix : "", "   ");
@@ -749,14 +756,18 @@ int EmuFATFSBase::addFile(const char *filename, const char *filenameSuffix, uint
         cfe->startCluster = _nextFreeCluster;
         cfe->isDynamicFile = false;
 
-        uint32_t neededClusters = fileSize / BYTES_PER_CLUSTER;
-        if (fileSize & (BYTES_PER_CLUSTER -1)) neededClusters++;
+        if (fileSize){
+          uint32_t neededClusters = fileSize / BYTES_PER_CLUSTER;
+          if (fileSize & (BYTES_PER_CLUSTER -1)) neededClusters++;
 
-        if (!neededClusters) neededClusters = 1;
+          if (!neededClusters) neededClusters = 1;
 
-        cretassure(cfe->startCluster + neededClusters < 0x10000, "Not enough sectors left to store file");
-        
-        _nextFreeCluster += neededClusters;
+          cretassure(cfe->startCluster + neededClusters < 0x10000, "Not enough sectors left to store file");
+          
+          _nextFreeCluster += neededClusters;
+        }else{
+          cfe->startCluster = 0;
+        }    
     }
     
     _usedFiles++;
@@ -786,8 +797,20 @@ int EmuFATFSBase::addFileDynamic(const char *filename, const char *filenameSuffi
         }
     }
     
-    _nextFreeCluster = 0; //disable adding files statically
-    
+    if (!startCluster){
+      startCluster = _nextFreeCluster;
+      uint32_t neededClusters = fileSize / BYTES_PER_CLUSTER;
+      if (fileSize & (BYTES_PER_CLUSTER -1)) neededClusters++;
+
+      if (!neededClusters) neededClusters = 1;
+
+      cretassure(startCluster + neededClusters < 0x10000, "Not enough sectors left to store file");
+      
+      _nextFreeCluster += neededClusters;
+    }else{
+      _nextFreeCluster = 0; //disable adding files statically
+    }
+        
     {
         FileEntry *cfe = &_fileStorage[_usedFiles];
         cfe->f_read = f_read;
