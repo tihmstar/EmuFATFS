@@ -54,17 +54,29 @@ typedef struct{
 
 
 typedef struct{
+    uint16_t day  : 5;
+    uint16_t mon  : 4;
+    uint16_t year : 7;
+} ATTRIBUTE_PACKED FatDate_t;
+
+typedef struct{
+    uint16_t sec  : 5;
+    uint16_t min  : 6;
+    uint16_t hour : 5;
+} ATTRIBUTE_PACKED FatTime_t;
+
+typedef struct{
     char shortFilename[8];
     char filenameExt[3];
     uint8_t fileAttributes;
     uint8_t  reserved;
     uint8_t  createTime_ms;
-    uint16_t createTime;
-    uint16_t createDate;
-    uint16_t accessedDate;
+    FatTime_t createTime;
+    FatDate_t createDate;
+    FatDate_t accessedDate;
     uint16_t clusterNumber_High;
-    uint16_t modifiedTime;
-    uint16_t modifiedDate;
+    FatTime_t modifiedTime;
+    FatDate_t modifiedDate;
     uint16_t clusterLocation;
     uint32_t fileSize;
 } ATTRIBUTE_PACKED FAT_DirectoryTableFileEntry_t;
